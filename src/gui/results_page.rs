@@ -1,13 +1,26 @@
+
+use crate::gui::entry_page::CalcData;
+
 use relm::Widget;
 use gtk::prelude::*;
 use relm::Relm;
-use relm_derive::widget;
+use relm_derive::{Msg, widget};
+
+use crate::calcs::{self, EnumToString};
+
+use super::info_button::{Wdg as InfoButton, Msg::UpdateText as InfoButtonUpdateText};
+
 
 pub struct Model {
     calories: (f32, f32),
     proteins: (f32, f32),
     fat: (f32, f32),
     carbs: (f32, f32),
+}
+
+#[derive(Msg)]
+pub enum Msg {
+    Update(CalcData)
 }
 
 #[widget]
@@ -20,10 +33,60 @@ impl Widget for Wdg {
             carbs: (0.0, 0.0),
         }
     }
-    fn update(&mut self, _: ()) {}
+    fn update(&mut self, msg: Msg) {
+        fn make_msg<E: EnumToString>(infos: Vec<E>) -> Option<String> {
+            if !infos.is_empty() {
+                let mut res = String::new();
+                for i in infos {
+                    res.push_str(&i.to_string());
+                }
+
+                Some(res)
+            } else {
+                None
+            }
+        }
+        match msg {
+            Msg::Update(data) => {                
+                {
+                    let (base_cals, problems_cals) = calcs::base_calories(&data.weight, data.height, data.age, &data.sex);
+                    self.model.calories = calcs::target_calories(base_cals, &data.activity, &data.goal);
+                    self.components.i_calories.stream().emit(InfoButtonUpdateText(make_msg(problems_cals)));
+                }
+
+                {
+                    let (min_fat, max_fat, problems_fat) = calcs::fat(&data.weight, &data.goal);
+                    self.model.fat = (min_fat, max_fat);
+                    self.components.i_fat.stream().emit(InfoButtonUpdateText(make_msg(problems_fat)));
+                }
+
+                {
+                    let (min_proteins, max_proteins, problems_proteins) = 
+                        calcs::proteins(&data.weight, data.age, 
+                            &data.training_kind, &data.goal, &data.sex,
+                        &data.activity, data.is_bodybuilder);
+
+                    self.model.proteins = (min_proteins, max_proteins);
+                    self.components.i_proteins.stream().emit(InfoButtonUpdateText(make_msg(problems_proteins)));
+                }
+                
+                {
+                    let (min_carbs, max_carbs) = calcs::carbs(
+                        self.model.calories,
+                        self.model.proteins,
+                        self.model.fat, data.weight.total, data.athlete_kind);
+                    self.model.carbs = (min_carbs, max_carbs);
+                }
+            }
+        }
+    }
 
     view! {
         gtk::Grid {
+            column_spacing: 10,
+            row_spacing: 10,
+            border_width: 10,
+            
             gtk::Label {
                 text:  "Calories",
                 cell: {
@@ -44,7 +107,7 @@ impl Widget for Wdg {
                 text:  &self.model.calories.0.to_string(),
                 cell: {
                     top_attach: 0,
-                    left_attach: 1,
+                    left_attach: 2,
                 }
             },
 
@@ -52,7 +115,7 @@ impl Widget for Wdg {
                 text:  "⭱",
                 cell: {
                     top_attach: 0,
-                    left_attach: 2,
+                    left_attach: 3,
                 }
             },
 
@@ -60,7 +123,16 @@ impl Widget for Wdg {
                 text: &self.model.calories.1.to_string(),
                 cell: {
                     top_attach: 0,
-                    left_attach: 3,
+                    left_attach: 4,
+                }
+            },
+
+            #[name="i_calories"]
+            InfoButton() {
+                visible: false,
+                cell: {
+                    top_attach: 0,
+                    left_attach: 5,
                 }
             },
 
@@ -105,6 +177,17 @@ impl Widget for Wdg {
                 }
             },
 
+            #[name="i_proteins"]
+            InfoButton() {
+                visible: false,
+                cell: {
+                    top_attach: 1,
+                    left_attach: 5,
+                }
+            },
+
+            // Fat
+
             gtk::Label {
                 text: "Fat",
                 cell: {
@@ -145,6 +228,17 @@ impl Widget for Wdg {
                 }
             },
 
+            #[name="i_fat"]
+            InfoButton() {
+                visible: false,
+                cell: {
+                    top_attach: 2,
+                    left_attach: 5,
+                }
+            },
+
+            // Carbohidrates
+
             gtk::Label {
                 text: "Carbohidrates",
                 cell: {
@@ -162,7 +256,7 @@ impl Widget for Wdg {
             },
 
             gtk::Label {
-                text: &self.model.calories.0.to_string(),
+                text: &self.model.carbs.0.to_string(),
                 cell: {
                     top_attach: 3,
                     left_attach: 2,
@@ -178,13 +272,12 @@ impl Widget for Wdg {
             },
 
             gtk::Label {
-                text: &self.model.calories.1.to_string(),
+                text: &self.model.carbs.1.to_string(),
                 cell: {
                     top_attach: 3,
                     left_attach: 4,
                 }
-            },
-
+            }
         }
     }
 }

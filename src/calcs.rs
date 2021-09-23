@@ -1,21 +1,31 @@
+use crate::consts::{msgs::*, nums::*};
 use strum_macros::{EnumIter, EnumString};
 
 /***** Pub interface *******************************************************/
-pub fn base_calories(weight: Weight, height: f32, age: u8, sex: Sex ) -> (f32, Vec<CaloriesSpecialCases>) {
-    if let Some(fat) = weight.fat_percent() {
-        (katch_mcardle(weight.total, fat), Vec::new())
-    }
-    else { (mifflin_st_jeor(weight.total, height, age, sex), vec![CaloriesSpecialCases::MifflinFormula])}
+pub trait EnumToString {
+    fn to_string(&self) -> String;
 }
 
-pub fn target_calories(base_cals: f32, activity: Activity, goal: Goal) -> (f32, f32) {
+pub fn base_calories(weight: &Weight, height: Option<f32>, age: u8, sex: &Sex ) -> (f32, Vec<CaloriesSpecialCases>) {
+    if let Some(fat) = weight.fat_percent {
+        (katch_mcardle(weight.total, fat), Vec::new())
+    }
+    else if let Some(height) = height { 
+        (mifflin_st_jeor(weight.total, height, age, sex), vec![CaloriesSpecialCases::MifflinFormula])
+    }
+    else {
+        panic!("Either weight.fat_percent or height must be some")
+    }
+}
+
+pub fn target_calories(base_cals: f32, activity: &Activity, goal: &Goal) -> (f32, f32) {
     let (min, max) = activity.adjust();
     let goal_adj = goal.adjust();
     (min * base_cals * goal_adj, max * base_cals * goal_adj)
 }
 
 pub fn carbs(
-    total_cals: f32,
+    total_cals: (f32, f32),
     proteins: (f32, f32),
     fat: (f32, f32),
     weight_total: f32,
@@ -29,20 +39,20 @@ pub fn carbs(
 }
 
 pub fn proteins(
-    weight: Weight,
+    weight: &Weight,
     age: u8,
-    training: MuscleTrainingKind,
-    goal: Goal,
-    sex: Sex,
-    activity: Activity,
+    training: &Option<MuscleTrainingKind>,
+    goal: &Goal,
+    sex: &Sex,
+    activity: &Activity,
     is_bodybuilder: bool
     ) -> (f32, f32, Vec<ProteinSpecialCases>) {
     fn is_teen(age: u8) -> bool {
-        return age < 19
+        return age <= TEEN_MAX_AGE
     }
 
     fn is_goal_very_low_carbs(goal: &Goal) -> bool {
-        fn is_intensityModerate(intensity: &GoalIntensity) -> bool {
+        fn is_intensity_moderate(intensity: &GoalIntensity) -> bool {
             match intensity {
             GoalIntensity::Extreme => true,
             GoalIntensity::High => true,
@@ -51,20 +61,20 @@ pub fn proteins(
 
         }
         
-        if let Goal::WeightLoss(intensity) = goal {is_intensityModerate(intensity)}
+        if let Goal::WeightLoss(intensity) = goal {is_intensity_moderate(intensity)}
         else {false}
     }
 
-    fn isReallyLean(weight: &Weight, sex: Sex) -> bool {
+    fn is_really_lean(weight: &Weight, sex: &Sex) -> bool {
         let min_fat = match sex {
-            Sex::Male => 0.1, // TODO: This should be asked with Carlos
-            Sex::Female => 0.15 // TODO: This should be asked with Carlos
+            Sex::Male => REALLY_LEAN_MALE, 
+            Sex::Female => REALLY_LEAN_FEMALE
         };
 
         return weight.is_fat_percent_higher(min_fat)
     }
 
-    fn isActivityHigh(activity: &Activity) -> bool {
+    fn is_activity_high(activity: &Activity) -> bool {
         match activity {
             Activity::Extreme => true,
             Activity::Vigorous => true,
@@ -72,27 +82,19 @@ pub fn proteins(
         }
     }
 
-    fn isSedentary(activity: &Activity) -> bool {
+    fn is_sedentary(activity: &Activity) -> bool {
         activity == &Activity::Sedentary
     }
 
-    fn isHighFat(weight: &Weight) -> bool {
-        if let Some(fat) = weight.fat_percent() {
-            let fat_thresh = 0.3; // TODO: This should be asked with Carlos
-            fat >= fat_thresh 
-        }
-        else {false}
-    }
-
-    fn calcForWeight(weight: &Weight, forTotal: f32, forLean: f32) -> f32 {
+    fn calc_for_weight(weight: &Weight, for_total: f32, for_lean: f32) -> f32 {
         if let Some(lean) = weight.lean {
-            forLean * lean
+            for_lean * lean
         }
-        else {forTotal * weight.total}
+        else {for_total * weight.total}
     }
 
     if is_bodybuilder {
-        let (min, max) = proteins_bodybuilder(weight);
+        let (min, max) = proteins_bodybuilder(&weight);
         return (min, max, vec![])
     }
 
@@ -100,8 +102,8 @@ pub fn proteins(
         return (weight.total * 1.8, weight.total * 2.0, vec![ProteinSpecialCases::Teen])
     }
 
-    else if is_goal_very_low_carbs(&goal) || isActivityHigh(&activity) {
-        if isReallyLean(&weight, sex) {
+    else if is_goal_very_low_carbs(&goal) || is_activity_high(&activity) {
+        if is_really_lean(&weight, sex) {
             let lean = weight.lean.unwrap();
             return (lean * 2.5, lean * 4.0, vec![ProteinSpecialCases::ReallyLean])
         }
@@ -110,29 +112,36 @@ pub fn proteins(
                 if is_goal_very_low_carbs(&goal) {ProteinSpecialCases::LowCarbs}
                 else {ProteinSpecialCases::HighActivity}
             };
-            return (weight.total * 2.5, weight.total * 3.0, vec![special_case])
+            return (weight.total * 2.5, weight.total * 3.0, vec![special_case, ProteinSpecialCases::GeneralCase])
         }
     }
 
-    else if isSedentary(&activity) {
+    else if is_sedentary(&activity) {
         return (
-            calcForWeight(&weight,  1.5, 2.0),
-            calcForWeight(&weight,  2.0, 2.0),
-            vec![ProteinSpecialCases::Sedentary]
+            calc_for_weight(&weight,  1.5, 2.0),
+            calc_for_weight(&weight,  2.0, 2.0),
+            vec![ProteinSpecialCases::Sedentary, ProteinSpecialCases::GeneralCase]
         )
     }
-    else if isHighFat(&weight) {
+    else if weight.is_fat_percent_higher(HIGHER_FAT_THRESHOLD) {
         return (
-            calcForWeight(&weight, 1.5,  2.0),
-            calcForWeight(&weight, 2.0,  2.0),
-            vec![ProteinSpecialCases::HighFat]
+            calc_for_weight(&weight, 1.5,  2.0),
+            calc_for_weight(&weight, 2.0,  2.0),
+            vec![ProteinSpecialCases::HighFat, ProteinSpecialCases::GeneralCase]
         )
     }
 
     else {
         return match training {
-            Strength =>  (weight.total * 1.4, weight.total * 2.0, vec![]),
-            Resistance =>  (weight.total * 1.2, weight.total * 1.8, vec![])
+            Some(MuscleTrainingKind::Strength) =>  (weight.total * 1.4, weight.total * 2.0, vec![]),
+            Some(MuscleTrainingKind::Resistance) =>  (weight.total * 1.2, weight.total * 1.8, vec![]),
+            None => {
+                // For the most general case, the best recommendation is actually
+                // having a dose like a bodybuilder, given that proteins are important
+                // and help with common things like feeling full or sugar control
+                let (min, max) = proteins_bodybuilder(&weight);
+                (min, max, vec![])
+            }
         }
     }
 }
@@ -140,26 +149,29 @@ pub fn proteins(
 /***** Enums ******************************************************************/
 
 pub struct Weight {
-    total: f32,
+    pub total: f32,
+    fat_percent: Option<f32>,
     lean: Option<f32>
 }
 impl Weight {
-    fn fat_percent(&self) -> Option<f32> {
-        if let Some(lean) = self.lean {
-            return Some((self.total - lean)/self.total)
+    pub fn new(total: f32, fat_percent: Option<f32>) -> Self {
+        Self {
+            total,
+            fat_percent,
+            lean: fat_percent.map(|f_percent|total - (total * f_percent))
         }
-        else {return None}
     }
+    
 
     fn is_fat_percent_higher(&self, percent: f32) -> bool {
-        if let Some(fat) = self.fat_percent() {
+        if let Some(fat) = self.fat_percent {
             return fat >= percent
         }
         else {return false}
     }
 
     fn is_fat_percent_lower(&self, percent: f32) -> bool {
-        if let Some(fat) = self.fat_percent() {return fat <= percent}
+        if let Some(fat) = self.fat_percent {return fat <= percent}
         else {return false}
     }
 }
@@ -170,7 +182,7 @@ pub enum Sex {
     Female
 }
 
-#[derive(EnumIter, EnumString, PartialEq)]
+#[derive(Clone, EnumIter, PartialEq)]
 pub enum Activity {
     Sedentary, // No activity, office work
     Light,     // Little daily activity, exercise 1-3 times/week
@@ -180,7 +192,18 @@ pub enum Activity {
 }
 
 impl Activity {
+    pub fn from_int(i:u8) -> Self {
+        match i {
+            0 => Self::Sedentary,
+            1 => Self::Light,
+            2 => Self::Moderate,
+            3 => Self::Vigorous,
+            4 => Self::Extreme,
+            _ => panic!("Invalid activity value")
+        }
+    }
     fn adjust(&self) -> (f32, f32) {
+        use Activity::*;
         match self {
             Sedentary => (1.2, 1.2),
             Light => (1.3, 1.4) ,
@@ -191,7 +214,13 @@ impl Activity {
     }
 }
 
-#[derive(Debug, EnumString)]
+impl Default for Activity {
+    fn default() -> Self {
+        Activity::Sedentary
+    }
+}
+
+#[derive(Clone, Debug, EnumString)]
 pub enum GoalIntensity{
     Light,    // 10%
     Moderate, // 15%
@@ -199,7 +228,26 @@ pub enum GoalIntensity{
     Extreme   // 30%
 }
 
+impl GoalIntensity {
+    pub fn from_int(i: u8) -> GoalIntensity {
+        match i {
+            0=> GoalIntensity::Light,
+            1=> GoalIntensity::Moderate,
+            2=> GoalIntensity::High,
+            3=> GoalIntensity::Extreme,
+            _ => panic!("Invalid intensity")
+        }
+    }
+}
+
+impl Default for GoalIntensity {
+    fn default() -> Self {
+        GoalIntensity::Light
+    }
+}
+
 pub enum Goal {
+    None,
     WeightLoss(GoalIntensity),
     WeightGain(GoalIntensity)
 }
@@ -207,6 +255,7 @@ pub enum Goal {
 impl Goal {
     fn adjust(&self) -> f32 {
         fn intensity_adj(intensity: &GoalIntensity) -> f32 {
+            use GoalIntensity::*;
             match intensity {
                 Moderate => 0.15,
                 Light => 0.1,
@@ -216,6 +265,7 @@ impl Goal {
         }
 
         match self {
+            Goal::None => 1.0,
             Goal::WeightLoss(intensity) => 1.0 - intensity_adj(intensity),
             Goal::WeightGain(intensity) => 1.0 + intensity_adj(intensity)
         }
@@ -240,7 +290,17 @@ pub enum CaloriesSpecialCases {
     MifflinFormula
 }
 
-fn mifflin_st_jeor(weight: f32, height: f32, age: u8, sex: Sex) -> f32 {
+impl EnumToString for CaloriesSpecialCases {
+    fn to_string(&self) -> String {
+        use CaloriesSpecialCases::*;
+        match self {
+            MifflinFormula => MIFFLIN_FORMULA.to_string()
+        }
+    }
+}
+
+
+fn mifflin_st_jeor(weight: f32, height: f32, age: u8, sex: &Sex) -> f32 {
     let sex_adj: f32 = match sex {
         Sex::Male => 5.0,
         Sex::Female => -161.0
@@ -261,10 +321,26 @@ pub enum ProteinSpecialCases {
     HighActivity,
     ReallyLean, // So lean, needs extra protein
     Sedentary, // Can ingest low volume of protein
-    HighFat // Can ingest low volume of protein
+    HighFat, // Can ingest low volume of protein
+    GeneralCase // In general, is good to eat as much protein as a body builder
 }
 
-fn proteins_bodybuilder(weight: Weight) -> (f32, f32) {
+impl EnumToString for ProteinSpecialCases {
+    fn to_string(&self) -> String {
+        use ProteinSpecialCases::*;
+        match self {
+            Teen=> PROTEIN_TEEN.to_string(),
+            LowCarbs => LOW_CARBS.to_string(),
+            HighActivity => HIGH_ACTIVITY.to_string(),
+            ReallyLean => REALLY_LEAN.to_string(),
+            Sedentary => SEDENTARY.to_string(),
+            HighFat => HIGH_FAT.to_string(),
+            GeneralCase => GENERAL_CASE.to_string()
+        }
+    }
+}
+
+fn proteins_bodybuilder(weight: &Weight) -> (f32, f32) {
     if let Some(lean) = weight.lean {
         return (lean * 2.0, lean * 3.0)
     }
@@ -279,9 +355,18 @@ pub enum FatSpecialCases {
     LowCarbsDiet
 }
 
-fn fat(weight: Weight, goal: Goal ) -> (f32, f32, Vec<FatSpecialCases>) {
-    fn isGoalLowCarbs(goal: Goal) -> bool {
-        fn is_intensity_moderate(intensity: GoalIntensity) -> bool {
+impl EnumToString for FatSpecialCases {
+    fn to_string(&self) -> String {
+        use FatSpecialCases::*;
+        match self {
+            LowCarbsDiet => LOW_CARBS_DIET_FAT.to_string()
+        }
+    }
+}
+
+pub fn fat(weight: &Weight, goal: &Goal ) -> (f32, f32, Vec<FatSpecialCases>) {
+    fn is_goal_low_carbs(goal: &Goal) -> bool {
+        fn is_intensity_moderate(intensity: &GoalIntensity) -> bool {
             match intensity {
                 GoalIntensity::Moderate => true,
                 GoalIntensity::High => true,
@@ -295,13 +380,13 @@ fn fat(weight: Weight, goal: Goal ) -> (f32, f32, Vec<FatSpecialCases>) {
         else {false}
     }
     let cases: Vec<FatSpecialCases> = {
-        if isGoalLowCarbs(goal) {
+        if is_goal_low_carbs(goal) {
             vec![FatSpecialCases::LowCarbsDiet]
         }
         else {vec![]}
     };
-    const high_fat_threshold: f32 = 0.2; // TODO: Hablar con Carlos
-    if weight.is_fat_percent_higher(high_fat_threshold) {
+
+    if weight.is_fat_percent_higher(HIGH_FAT_THRESHOLD) {
         let lean = weight.lean.unwrap();
         return (lean * 1.0, lean * 2.0, cases)
     }
@@ -313,7 +398,7 @@ fn fat(weight: Weight, goal: Goal ) -> (f32, f32, Vec<FatSpecialCases>) {
 
 /***** Carbs ******************************************************************/
 
-fn carbs_normal(total_cals: f32, (min_pro, max_pro): (f32, f32), (min_fat, max_fat): (f32, f32)) -> (f32, f32) {
+fn carbs_normal((min_cals, max_cals): (f32, f32), (min_pro, max_pro): (f32, f32), (min_fat, max_fat): (f32, f32)) -> (f32, f32) {
     fn to_g(c: f32) -> f32 {
         c / 4.0
     }
@@ -321,8 +406,8 @@ fn carbs_normal(total_cals: f32, (min_pro, max_pro): (f32, f32), (min_fat, max_f
     // We calculate the carbohidrates as the remnant towards our calories,
     // so we get calories and transform that to grams.
     (
-        to_g(total_cals - (min_pro * 4.0 + min_fat * 9.0)),
-        to_g(total_cals - (max_pro * 4.0 + max_fat * 9.0))
+        to_g(min_cals - (min_pro * 4.0 + min_fat * 9.0)),
+        to_g(max_cals - (max_pro * 4.0 + max_fat * 9.0))
     )
     
 }

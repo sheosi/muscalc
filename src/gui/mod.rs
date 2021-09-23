@@ -3,16 +3,17 @@ mod header;
 mod info_button;
 mod results_page;
 
-use crate::calcs;
-
 use relm::Widget;
-use gtk::{Inhibit, prelude::*, Window, WindowType};
-use relm::{connect, Component, init, Relm, Update};
-use relm_derive::Msg;
+use gtk::{Inhibit, prelude::*};
+use relm::{Channel, connect, Component, init, Relm};
+use relm_derive::{Msg, widget};
 
 use Msg::*;
 
 pub struct Model {
+    header: Component<header::Wdg>,
+    r: Relm<Win>,
+    _channel_calc: Option<Channel<entry_page::CalcData>>
 }
 
 #[derive(Msg)]
@@ -22,26 +23,21 @@ pub enum Msg {
     Back
 }
 
+use entry_page::Wdg as EntryPage;
+use results_page::Wdg as ResultsPage;
+use entry_page::Msg::{ShowResults as EntryPageShowResults, ReceiveSender as EntryPageReceiveSender};
+use results_page::Msg::Update as ResultsPageUpdateResults;
+use header::Msg::{EnableBack as EnableBack, OnBack as HeaderBack};
 
-pub struct Win {
-    model: Model,
-    window: Window,
-    header: Component<header::Wdg>,
-    entry_page: Component<entry_page::Wdg>,
-    results_page: Component<results_page::Wdg>,
-}
-
-impl Update for Win {
-    // Specify the model used for this widget.
-    type Model = Model;
-    // Specify the model parameter used to init the model.
-    type ModelParam = ();
-    // Specify the type of the messages sent to the update function.
-    type Msg = Msg;
-
-    
-    fn model(_: &Relm<Self>, _: ()) -> Model {
+#[widget]
+impl Widget for Win {
+    fn model(r: &Relm<Self>, _: ()) -> Model {
+        let header = init::<header::Wdg>(()).expect("Header");        
+        
         Model {
+            header,
+            r:r.clone(),
+            _channel_calc: None
         }
     }
 
@@ -49,64 +45,49 @@ impl Update for Win {
         match event {
             Quit => gtk::main_quit(),
             ShowResults => {
-                self.results_page.widget().show();
-                self.entry_page.widget().hide();
+                self.widgets.results_page.show();
+                self.widgets.entry_page.hide();
             }
             Back => {
-                self.entry_page.widget().show();
-                self.results_page.widget().hide();
+                self.widgets.entry_page.show();
+                self.widgets.results_page.hide();
             }
         }
     }
-}
 
-impl Widget for Win {
-    type Root = Window;
+    view! {
+        #[style_class="mainwin"]
+        #[name="window"]
+        gtk::Window {
+            titlebar: Some(self.model.header.widget()),
 
-    // Return the root widget.
-    fn root(&self) -> Self::Root {
-        self.window.clone()
+            gtk::Grid {
+                #[name="entry_page"]
+                EntryPage() {
+                    EntryPageShowResults => ShowResults,
+                },
+
+                #[name="results_page"]
+                ResultsPage() {
+                    visible: false,
+                    no_show_all: true
+                }
+            },
+
+            delete_event(_, _)=> return (Some(Msg::Quit), Inhibit(false))
+        }
     }
 
-    fn view(relm: &Relm<Self>, model: Self::Model) -> Self {
-        // GTK+ widgets are used normally within a `Widget`.
-        let window = Window::new(WindowType::Toplevel);
-        window.style_context().add_class("mainwin");
-        
-        let header = init::<header::Wdg>(()).expect("Header");
-        window.set_titlebar(Some(header.widget()));
+    fn init_view(&mut self) {
+        let e = &self.components.entry_page;
+        connect!(e@EntryPageShowResults, self.model.header, EnableBack);
 
-        let grid = gtk::Grid::new();
-        let entry_page_wdg = init::<entry_page::Wdg>(()).expect("Entry Page");
-        grid.add(entry_page_wdg.widget());
+        let stream = self.components.results_page.stream();
+        let (c,s) = Channel::new(move |d|stream.emit(ResultsPageUpdateResults(d)));       
+        self.components.entry_page.stream().emit(EntryPageReceiveSender(s));
+        self.model._channel_calc = Some(c);
 
-        let results_page = init::<results_page::Wdg>(()).expect("Results Page");
-        results_page.widget().set_visible(false);
-        results_page.widget().set_no_show_all(true);
-        grid.add(results_page.widget());
-
-        window.add(&grid);
-        
-
-        /*use entry_page::Msg::ShowResults as EntryPageShowResults;
-        use header::Msg::{EnableBack as EnableBack, OnBack as HeaderBack};*/
-
-        // Connect the signal `delete_event` to send the `Quit` message.
-        connect!(relm, window, connect_delete_event(_, _), return (Some(Msg::Quit), Inhibit(false)));
-        /*connect!(relm, entry_page_wdg, EntryPageShowResults(_) , Msg::ShowResults);
-        connect!(relm, header, EnableBack(_), Msg::Back);
-        connect!(relm, header, HeaderBack(_) , Msg::Back);*/
-        // There is also a `connect!()` macro for GTK+ events that do not need a
-        // value to be returned in the callback.
-
-        window.show_all();
-
-        Win {
-            model,
-            window,
-            header,
-            entry_page: entry_page_wdg,
-            results_page
-        }
+        let h = &self.model.header;
+        connect!(h@HeaderBack, self.model.r , Msg::Back);
     }
 }

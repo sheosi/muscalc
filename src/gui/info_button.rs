@@ -2,9 +2,14 @@ use relm::Widget;
 use gtk::{prelude::*};
 use relm_derive::{Msg, widget};
 
+use Msg::*;
+
+// TODO: Make info buttons work
+
 #[derive(Msg)]
 pub enum Msg {
-    Pressed
+    Pressed,
+    UpdateText(Option<String>)
 }
 
 pub struct Model {
@@ -19,7 +24,14 @@ impl Widget for Wdg {
 
     fn update(&mut self, event: Msg) {
         match event {
-            Pressed => {}
+            Pressed => {},
+            UpdateText(text) => {
+                if let Some(text) = text {
+                    self.model.text = text;
+                    self.widgets.button.set_visible(true);
+                }
+            
+            }
         }
     }
 

@@ -19,7 +19,7 @@ impl Widget for Wdg {
 
     fn update(&mut self, event: Msg) {
         match event {
-            OnBack => println!("Add"),
+            OnBack => self.widgets.b_back.set_sensitive(false),
             EnableBack => self.widgets.b_back.set_sensitive(true),
         }
     }

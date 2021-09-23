@@ -1,4 +1,5 @@
 mod calcs;
+mod consts;
 mod gui;
 
 use gui::Win;
