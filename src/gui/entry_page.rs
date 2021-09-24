@@ -1,5 +1,5 @@
 
-use crate::calcs::{Activity, AthleteKind, Goal, GoalIntensity, MuscleTrainingKind, Sex, Weight};
+use crate::calcs::{Activity, AthleteKind, EnumIterString, Goal, GoalIntensity, MuscleTrainingKind, Sex, Weight};
 use crate::consts::gui::*;
 
 use relm::Widget;
@@ -11,10 +11,11 @@ use Msg::*;
 
 
 mod myscale {
+    use std::collections::HashMap;
+
     use relm::{Relm, Widget};
     use relm_derive::{Msg, widget};
     use gtk::prelude::*;
-    use gtk::Adjustment;
 
     use Msg::*;
 
@@ -23,35 +24,62 @@ mod myscale {
         ValChanged(u8),
     }
 
+    pub struct Model {
+        map: HashMap<u8, String>,
+        names: Vec<String>
+    }
+
     #[widget]
     impl Widget for Wdg {
-        fn model(_: &Relm<Self>, _: ()) -> () {}
+        fn model(_: &Relm<Self>, names: Vec<String>) -> Model {
+
+            let mut map = HashMap::new();
+            for (i, s) in names.iter().enumerate() {
+                map.insert(i as u8, s.to_string());
+            }
+
+            Model {map, names}
+        }
     
         fn update(&mut self, event: Msg) {
             match event {
-                ValChanged(new_val) => self.widgets.label.set_text(&format!("{}", new_val)),
+                ValChanged(new_val) => {
+                    self.widgets.label.set_text(&self.model.map[&new_val])
+                }
             }
         }
 
         view! {
             #[name="titlebar"]
-            gtk::Grid {
+            gtk::Box {
+                spacing: 10,
                 #[name="scale"]
                 gtk::Scale {
-                    adjustment: &Adjustment::new(10.0, 0.0, 100.0, 1.0, 10.0, 0.0),
                     value_changed(scale) => Msg::ValChanged(scale.value() as u8),
-                    hexpand: true
+                    hexpand: true,
+                    draw_value: false,
                 },
                 
                 #[name="label"]
                 gtk::Label {
-                    text: "0"
+                    text: &self.model.names.get(0).unwrap_or(&"".to_string()),
                 }
             }
         }
 
         fn init_view(&mut self) {
-            //self.widgets.scale.attach(self.model.s_goal_intensity.widget(), 4, 5, 1,1);
+            
+            self.widgets.label.set_size_request(100, -1);
+
+            self.widgets.scale.set_adjustment(
+                &gtk::Adjustment::new(0.0, 0.0, 
+                    (self.model.names.len() - 1) as f64,
+                    1.0, 1.0, 0.0),
+            );
+            for (id,e) in self.model.names.iter().enumerate() {
+                self.widgets.scale.add_mark(id as f64, gtk::PositionType::Bottom, Some(&e.to_string()));
+            }
+            self.widgets.scale.set_round_digits(0);
         }
     }
 }
@@ -60,6 +88,7 @@ pub struct Model {
     can_calc: bool,
     fat_has_content: bool,
     height_has_content: bool,
+    is_goal_none: bool,
     sender: Option<Sender<CalcData>>,
     list_act_kind: gtk::ListStore,
     
@@ -86,10 +115,13 @@ pub enum Msg {
     FatChanged,
     AgeChanged,
     HeightChanged,
+    GoalNoneChanged,
 
+    // Scales
     ActivityChanged(u8),
     GoalIntensityChanged(u8),
 
+    // Initialization
     ReceiveSender(Sender<CalcData>)
 }
 
@@ -119,8 +151,9 @@ impl Widget for Wdg {
             height_has_content: false,
             sender: None,
             list_act_kind,
+            is_goal_none: true,
 
-            activity: Activity::Light,
+            activity: Activity::Sedentary,
             goal_intensity: GoalIntensity::Light,
         }
     }
@@ -239,6 +272,10 @@ impl Widget for Wdg {
                 self.model.activity = Activity::from_int(id);
             }
 
+            GoalNoneChanged => {
+                self.model.is_goal_none = self.widgets.r_goal_none.is_active();
+            }
+
             GoalIntensityChanged(id) => {
                 self.model.goal_intensity = GoalIntensity::from_int(id);
             }
@@ -274,7 +311,6 @@ impl Widget for Wdg {
                 cell: {
                     top_attach: 0,
                     left_attach: 1,
-                    width: 5
                 },
                 hexpand: true
             },
@@ -295,8 +331,7 @@ impl Widget for Wdg {
                 changed => Msg::AgeChanged,
                 cell: {
                     top_attach: 1,
-                    left_attach: 1,
-                    width: 2
+                    left_attach: 1
                 }
             },
 
@@ -396,7 +431,7 @@ impl Widget for Wdg {
                 #[name="r_goal_none"]
                 gtk::RadioButton {
                     label: "∅",
-                    
+                    toggled=> Msg::GoalNoneChanged,
                 },
 
                 gtk::RadioButton({group: r_goal_none}) {
@@ -415,12 +450,13 @@ impl Widget for Wdg {
             },
 
             #[name="s_goal_intensity"]
-            MyScale() {
+            MyScale(GoalIntensity::vec_string()) {
                 MyScaleValChanged(n) => Msg::GoalIntensityChanged(n),
+                sensitive: !self.model.is_goal_none,
                 cell: {
                     top_attach: 4,
-                    left_attach: 4,
-                    width: 2
+                    left_attach: 2,
+                    width: 3
                 }
             },
             
@@ -435,38 +471,41 @@ impl Widget for Wdg {
             },
 
             #[name="s_activity"]
-            MyScale()  {
+            MyScale(Activity::vec_string()) {
                 MyScaleValChanged(n) => Msg::ActivityChanged(n),
                 cell: {
                     top_attach: 5,
                     left_attach: 1,
-                    width: 3
+                    width: 2
                 }
             },
 
             gtk::Label {
                 text: "Kind",
+                sensitive: self.model.activity != Activity::Sedentary,
                 cell: {
                     top_attach: 5,
-                    left_attach: 4
+                    left_attach: 3
                 }
             },
 
             #[name="c_activity_kind"]
             gtk::ComboBox {
                 model: Some(&self.model.list_act_kind),
+                sensitive: self.model.activity != Activity::Sedentary,
                 cell: {
                     top_attach: 5,
-                    left_attach: 5
+                    left_attach: 4
                 }
             },
             
             #[name="c_athlete"]
             gtk::CheckButton {
                 label: "Athlete",
+                sensitive: self.model.activity != Activity::Sedentary,
                 cell: {
                     top_attach: 5,
-                    left_attach: 6
+                    left_attach: 5
                 }
             },
 

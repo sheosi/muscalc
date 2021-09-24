@@ -52,8 +52,6 @@ dependencies = [
  "gtk",
  "relm",
  "relm-derive",
- "strum",
- "strum_macros",
 ]
 
 [[package]]

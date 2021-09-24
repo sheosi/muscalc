@@ -1,9 +1,23 @@
 use crate::consts::{msgs::*, nums::*};
-use strum_macros::{EnumIter, EnumString};
 
 /***** Pub interface *******************************************************/
 pub trait EnumToString {
     fn to_string(&self) -> String;
+}
+
+pub trait EnumIter where Self:Sized {
+    fn iter_all() -> &'static[Self];
+}
+
+pub trait EnumIterString {
+    fn vec_string() -> Vec<String>;
+}
+
+impl<T: 'static> EnumIterString for T where T:EnumIter + EnumToString {
+    fn vec_string() -> Vec<String> {
+        let i= Self::iter_all();
+        i.iter().map(|e| e.to_string()).collect()
+    }
 }
 
 pub fn base_calories(weight: &Weight, height: Option<f32>, age: u8, sex: &Sex ) -> (f32, Vec<CaloriesSpecialCases>) {
@@ -169,11 +183,6 @@ impl Weight {
         }
         else {return false}
     }
-
-    fn is_fat_percent_lower(&self, percent: f32) -> bool {
-        if let Some(fat) = self.fat_percent {return fat <= percent}
-        else {return false}
-    }
 }
 
 
@@ -182,7 +191,7 @@ pub enum Sex {
     Female
 }
 
-#[derive(Clone, EnumIter, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Activity {
     Sedentary, // No activity, office work
     Light,     // Little daily activity, exercise 1-3 times/week
@@ -220,7 +229,29 @@ impl Default for Activity {
     }
 }
 
-#[derive(Clone, Debug, EnumString)]
+impl EnumIter for Activity {
+    fn iter_all() -> &'static [Self] {
+        &[
+            Self::Sedentary, Self::Light, Self::Moderate, Self::Vigorous,
+            Self::Extreme
+        ]
+    }
+}
+
+impl EnumToString for Activity {
+    fn to_string(&self) -> String {
+        use Activity::*;
+        match self {
+            Sedentary => "Sedentary".to_string(),
+            Light => "Light".to_string(),
+            Moderate => "Moderate".to_string(),
+            Vigorous => "Vigorous".to_string(),
+            Extreme => "Extreme".to_string()
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum GoalIntensity{
     Light,    // 10%
     Moderate, // 15%
@@ -243,6 +274,27 @@ impl GoalIntensity {
 impl Default for GoalIntensity {
     fn default() -> Self {
         GoalIntensity::Light
+    }
+}
+
+impl EnumIter for GoalIntensity {
+    fn iter_all() -> &'static [Self] {
+        &[
+            GoalIntensity::Light, GoalIntensity::Moderate, GoalIntensity::High,
+            GoalIntensity::Extreme
+        ]
+    }
+}
+
+impl EnumToString for GoalIntensity {
+    fn to_string(&self) -> String {
+        use GoalIntensity::*;
+        match self {
+            Light => "Light".to_string(),
+            Moderate => "Moderate".to_string(),
+            High => "High".to_string(),
+            Extreme => "Extreme".to_string()
+        }
     }
 }
 
@@ -406,8 +458,8 @@ fn carbs_normal((min_cals, max_cals): (f32, f32), (min_pro, max_pro): (f32, f32)
     // We calculate the carbohidrates as the remnant towards our calories,
     // so we get calories and transform that to grams.
     (
-        to_g(min_cals - (min_pro * 4.0 + min_fat * 9.0)),
-        to_g(max_cals - (max_pro * 4.0 + max_fat * 9.0))
+        to_g(max_cals - (max_pro * 4.0 + max_fat * 9.0)),
+        to_g(min_cals - (min_pro * 4.0 + min_fat * 9.0))
     )
     
 }
