@@ -13,9 +13,7 @@ pub enum Msg {
 
 #[widget]
 impl Widget for Wdg {
-    fn model() -> () {
-
-    }
+    fn model() {}
 
     fn update(&mut self, event: Msg) {
         match event {

@@ -90,7 +90,6 @@ pub struct Model {
     height_has_content: bool,
     is_goal_none: bool,
     sender: Option<Sender<CalcData>>,
-    list_act_kind: gtk::ListStore,
     
     activity: Activity,
     goal_intensity: GoalIntensity,
@@ -128,29 +127,15 @@ pub enum Msg {
 use myscale::Wdg as MyScale;
 use myscale::Msg::ValChanged as MyScaleValChanged;
 
-fn only_digits() {
-    // TODO!!
-}
-
 #[widget]    
 impl Widget for Wdg {
-    fn model(_: &Relm<Self>, _: ()) -> Model {
-        let list_act_kind = gtk::ListStore::new(&[glib::Type::STRING]);
+    fn model(_: &Relm<Self>, _: ()) -> Model {       
 
-        const ACT_KINDS : [&str; 3] = ["Resistance/Cardio", "Strength", "Bodybuilding"];
-
-        for act_kind in ACT_KINDS {
-            list_act_kind.set(&list_act_kind.append(), &[(0,&act_kind.to_string())]);
-        }
-
-        
-        
         Model {
             can_calc: false,
             fat_has_content: false,
             height_has_content: false,
             sender: None,
-            list_act_kind,
             is_goal_none: true,
 
             activity: Activity::Sedentary,
@@ -159,16 +144,7 @@ impl Widget for Wdg {
     }
 
     fn update(&mut self, event: Msg) {
-        fn required(entry: &gtk::Entry) {
-            if entry.text() == "" {
-                entry.style_context().add_class("error");
-            }
-            else {
-                entry.style_context().remove_class("error");
-            }
-        }
-
-        fn required_spin(entry: &gtk::SpinButton) {
+        fn required(entry: &gtk::SpinButton) {
             if entry.text() == "" {
                 entry.style_context().add_class("error");
             }
@@ -183,11 +159,15 @@ impl Widget for Wdg {
 
             has_weight && has_age && (wdg.model.fat_has_content || wdg.model.height_has_content)
         }
+
+        fn optional(val: f64) -> Option<f32> {
+            if val == 0.0 {None} else {Some(val as f32)}
+        }
         match event {
             ShowResults=> {
                 let weight = Weight::new(
-                    self.widgets.e_weight.text().parse::<f32>().unwrap(),
-                    self.widgets.e_fat.text().parse::<f32>().ok()
+                    self.widgets.e_weight.value() as f32,
+                    optional(self.widgets.e_fat.value())
                 );
 
                 let intensity = self.model.goal_intensity.clone();
@@ -234,8 +214,8 @@ impl Widget for Wdg {
 
                 let data = CalcData {
                     weight,
-                    age: self.widgets.e_age.text().parse().unwrap(),
-                    height: self.widgets.e_height.text().parse().ok(),
+                    age: self.widgets.e_age.value_as_int() as u8,
+                    height: optional(self.widgets.e_height.value()),
                     activity,
                     sex,
                     goal,
@@ -248,24 +228,24 @@ impl Widget for Wdg {
 
             WeightChanged=> {
                 required(&self.widgets.e_weight);
-                self.model.can_calc = can_calc(&self);
+                self.model.can_calc = can_calc(self);
             },
 
             FatChanged => {
                 required(&self.widgets.e_fat);
-                self.model.fat_has_content = self.widgets.e_fat.text() != "";
-                self.model.can_calc = can_calc(&self);
+                self.model.fat_has_content = self.widgets.e_fat.value() != 0.0;
+                self.model.can_calc = can_calc(self);
             },
 
             AgeChanged => {
-                required_spin(&self.widgets.e_age);
-                self.model.can_calc = can_calc(&self);
+                required(&self.widgets.e_age);
+                self.model.can_calc = can_calc(self);
             },
 
             HeightChanged => {
                 required(&self.widgets.e_height);
-                self.model.height_has_content = self.widgets.e_height.text() != "";
-                self.model.can_calc = can_calc(&self);
+                self.model.height_has_content = self.widgets.e_height.value() != 0.0;
+                self.model.can_calc = can_calc(self);
             },
 
             ActivityChanged(id) => {
@@ -305,8 +285,10 @@ impl Widget for Wdg {
 
             #[name="e_weight"]
             #[style_class="error"]
-            gtk::Entry {
+            gtk::SpinButton {
                 placeholder_text: Some("Kg"),
+                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0),
+                digits: 2,
                 changed => Msg::WeightChanged,
                 cell: {
                     top_attach: 0,
@@ -329,6 +311,7 @@ impl Widget for Wdg {
             gtk::SpinButton {
                 placeholder_text: Some("years"),
                 changed => Msg::AgeChanged,
+                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0),
                 cell: {
                     top_attach: 1,
                     left_attach: 1
@@ -347,9 +330,11 @@ impl Widget for Wdg {
 
             #[name="e_fat"]
             #[style_class="error"]
-            gtk::Entry {
+            gtk::SpinButton {
                 placeholder_text: Some("% (Optional)"),
                 sensitive: !self.model.height_has_content,
+                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0),
+                digits: 1,
                 changed => Msg::FatChanged,
                 cell: {
                     top_attach: 2,
@@ -378,10 +363,11 @@ impl Widget for Wdg {
 
             #[name="e_height"]
             #[style_class="error"]
-            gtk::Entry {
+            gtk::SpinButton {
                 placeholder_text: Some("meters"),
                 sensitive: !self.model.fat_has_content,
                 changed => Msg::HeightChanged,
+                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0),
                 cell: {
                     top_attach: 2,
                     left_attach: 4,
@@ -490,8 +476,7 @@ impl Widget for Wdg {
             },
 
             #[name="c_activity_kind"]
-            gtk::ComboBox {
-                model: Some(&self.model.list_act_kind),
+            gtk::ComboBoxText {
                 sensitive: self.model.activity != Activity::Sedentary,
                 cell: {
                     top_attach: 5,
@@ -527,5 +512,12 @@ impl Widget for Wdg {
     }
 
     fn init_view(&mut self) {
+        const ACT_KINDS : [&str; 3] = ["Resistance/Cardio", "Strength", "Bodybuilding"];
+
+        for (idx, act_kind) in ACT_KINDS.iter().enumerate() {
+            self.widgets.c_activity_kind.append(Some(&idx.to_string()), act_kind);
+        }
+
+        
     }
 }
