@@ -62,17 +62,12 @@ pub fn proteins(
     is_bodybuilder: bool
     ) -> (f32, f32, Vec<ProteinSpecialCases>) {
     fn is_teen(age: u8) -> bool {
-        return age <= TEEN_MAX_AGE
+        age <= TEEN_MAX_AGE
     }
 
     fn is_goal_very_low_carbs(goal: &Goal) -> bool {
         fn is_intensity_moderate(intensity: &GoalIntensity) -> bool {
-            match intensity {
-            GoalIntensity::Extreme => true,
-            GoalIntensity::High => true,
-            _ => false
-            }
-
+            matches!(intensity, GoalIntensity::Extreme | GoalIntensity::High)
         }
         
         if let Goal::WeightLoss(intensity) = goal {is_intensity_moderate(intensity)}
@@ -85,15 +80,11 @@ pub fn proteins(
             Sex::Female => REALLY_LEAN_FEMALE
         };
 
-        return weight.is_fat_percent_higher(min_fat)
+        weight.is_fat_percent_higher(min_fat)
     }
 
     fn is_activity_high(activity: &Activity) -> bool {
-        match activity {
-            Activity::Extreme => true,
-            Activity::Vigorous => true,
-            _ => false
-        }
+        matches!(activity, Activity::Extreme | Activity::Vigorous)
     }
 
     fn is_sedentary(activity: &Activity) -> bool {
@@ -108,52 +99,52 @@ pub fn proteins(
     }
 
     if is_bodybuilder {
-        let (min, max) = proteins_bodybuilder(&weight);
-        return (min, max, vec![])
+        let (min, max) = proteins_bodybuilder(weight);
+        (min, max, vec![])
     }
 
     else if is_teen(age) {
-        return (weight.total * 1.8, weight.total * 2.0, vec![ProteinSpecialCases::Teen])
+        (weight.total * 1.8, weight.total * 2.0, vec![ProteinSpecialCases::Teen])
     }
 
-    else if is_goal_very_low_carbs(&goal) || is_activity_high(&activity) {
-        if is_really_lean(&weight, sex) {
+    else if is_goal_very_low_carbs(goal) || is_activity_high(activity) {
+        if is_really_lean(weight, sex) {
             let lean = weight.lean.unwrap();
-            return (lean * 2.5, lean * 4.0, vec![ProteinSpecialCases::ReallyLean])
+            (lean * 2.5, lean * 4.0, vec![ProteinSpecialCases::ReallyLean])
         }
         else {
             let special_case: ProteinSpecialCases = {
-                if is_goal_very_low_carbs(&goal) {ProteinSpecialCases::LowCarbs}
+                if is_goal_very_low_carbs(goal) {ProteinSpecialCases::LowCarbs}
                 else {ProteinSpecialCases::HighActivity}
             };
-            return (weight.total * 2.5, weight.total * 3.0, vec![special_case, ProteinSpecialCases::GeneralCase])
+            (weight.total * 2.5, weight.total * 3.0, vec![special_case, ProteinSpecialCases::GeneralCase(proteins_bodybuilder(weight))])
         }
     }
 
-    else if is_sedentary(&activity) {
-        return (
-            calc_for_weight(&weight,  1.5, 2.0),
-            calc_for_weight(&weight,  2.0, 2.0),
-            vec![ProteinSpecialCases::Sedentary, ProteinSpecialCases::GeneralCase]
+    else if is_sedentary(activity) {
+        (
+            calc_for_weight(weight,  1.5, 2.0),
+            calc_for_weight(weight,  2.0, 2.0),
+            vec![ProteinSpecialCases::Sedentary, ProteinSpecialCases::GeneralCase(proteins_bodybuilder(weight))]
         )
     }
     else if weight.is_fat_percent_higher(HIGHER_FAT_THRESHOLD) {
-        return (
-            calc_for_weight(&weight, 1.5,  2.0),
-            calc_for_weight(&weight, 2.0,  2.0),
-            vec![ProteinSpecialCases::HighFat, ProteinSpecialCases::GeneralCase]
+        (
+            calc_for_weight(weight, 1.5,  2.0),
+            calc_for_weight(weight, 2.0,  2.0),
+            vec![ProteinSpecialCases::HighFat, ProteinSpecialCases::GeneralCase(proteins_bodybuilder(weight))]
         )
     }
 
     else {
-        return match training {
+        match training {
             Some(MuscleTrainingKind::Strength) =>  (weight.total * 1.4, weight.total * 2.0, vec![]),
             Some(MuscleTrainingKind::Resistance) =>  (weight.total * 1.2, weight.total * 1.8, vec![]),
             None => {
                 // For the most general case, the best recommendation is actually
                 // having a dose like a bodybuilder, given that proteins are important
                 // and help with common things like feeling full or sugar control
-                let (min, max) = proteins_bodybuilder(&weight);
+                let (min, max) = proteins_bodybuilder(weight);
                 (min, max, vec![])
             }
         }
@@ -172,16 +163,16 @@ impl Weight {
         Self {
             total,
             fat_percent,
-            lean: fat_percent.map(|f_percent|total - (total * f_percent))
+            lean: fat_percent.map(|f_percent|total - (total * f_percent/100.0))
         }
     }
     
 
     fn is_fat_percent_higher(&self, percent: f32) -> bool {
         if let Some(fat) = self.fat_percent {
-            return fat >= percent
+            fat >= percent
         }
-        else {return false}
+        else {false}
     }
 }
 
@@ -197,7 +188,7 @@ pub enum Activity {
     Light,     // Little daily activity, exercise 1-3 times/week
     Moderate,  // Moderate daily activity, exercise 3-5 times/week
     Vigorous,  // Vigorous daily activity, exercise 6-7 times/week
-    Extreme   // Intense daily worjour, tiring physical job
+    Extreme   // Intense daily workout, tiring physical job
 }
 
 impl Activity {
@@ -243,9 +234,9 @@ impl EnumToString for Activity {
         use Activity::*;
         match self {
             Sedentary => "Sedentary".to_string(),
-            Light => "Light".to_string(),
-            Moderate => "Moderate".to_string(),
-            Vigorous => "Vigorous".to_string(),
+            Light => "1-3 times".to_string(),
+            Moderate => "3-5 times".to_string(),
+            Vigorous => "6-7 times".to_string(),
             Extreme => "Extreme".to_string()
         }
     }
@@ -358,7 +349,8 @@ fn mifflin_st_jeor(weight: f32, height: f32, age: u8, sex: &Sex) -> f32 {
         Sex::Female => -161.0
         
     };
-    return (9.99 * weight) + (6.25 * height) - (4.92 * (age as f32)) + sex_adj
+
+    (9.99 * weight) + (6.25 * height) - (4.92 * (age as f32)) + sex_adj
 }
 
 fn katch_mcardle(weight: f32, fat_percent: f32) -> f32 {
@@ -374,7 +366,7 @@ pub enum ProteinSpecialCases {
     ReallyLean, // So lean, needs extra protein
     Sedentary, // Can ingest low volume of protein
     HighFat, // Can ingest low volume of protein
-    GeneralCase // In general, is good to eat as much protein as a body builder
+    GeneralCase((f32, f32)) // In general, is good to eat as much protein as a body builder
 }
 
 impl EnumToString for ProteinSpecialCases {
@@ -387,31 +379,31 @@ impl EnumToString for ProteinSpecialCases {
             ReallyLean => REALLY_LEAN.to_string(),
             Sedentary => SEDENTARY.to_string(),
             HighFat => HIGH_FAT.to_string(),
-            GeneralCase => GENERAL_CASE.to_string()
+            GeneralCase((std_min, std_max)) => general_case(*std_min,*std_max)
         }
     }
 }
 
 fn proteins_bodybuilder(weight: &Weight) -> (f32, f32) {
     if let Some(lean) = weight.lean {
-        return (lean * 2.0, lean * 3.0)
+        (lean * 2.0, lean * 3.0)
     }
     else {
-        return (weight.total * 2.0, weight.total * 2.5)
+        (weight.total * 2.0, weight.total * 2.5)
     }
 }
 
 /***** Fat ********************************************************************/
 
 pub enum FatSpecialCases {
-    LowCarbsDiet
+    LowCarbsDiet((f32, f32))
 }
 
 impl EnumToString for FatSpecialCases {
     fn to_string(&self) -> String {
         use FatSpecialCases::*;
         match self {
-            LowCarbsDiet => LOW_CARBS_DIET_FAT.to_string()
+            LowCarbsDiet((min, max)) => low_carbs_diet_fat(*min, *max)
         }
     }
 }
@@ -419,31 +411,30 @@ impl EnumToString for FatSpecialCases {
 pub fn fat(weight: &Weight, goal: &Goal ) -> (f32, f32, Vec<FatSpecialCases>) {
     fn is_goal_low_carbs(goal: &Goal) -> bool {
         fn is_intensity_moderate(intensity: &GoalIntensity) -> bool {
-            match intensity {
-                GoalIntensity::Moderate => true,
-                GoalIntensity::High => true,
-                GoalIntensity::Extreme => true,
-                _ => false
-            }
-
+            matches!(intensity,  GoalIntensity::Moderate | GoalIntensity::High | GoalIntensity::Extreme)
         }
         
         if let Goal::WeightLoss(intensity) = goal {is_intensity_moderate(intensity)}
         else {false}
     }
-    let cases: Vec<FatSpecialCases> = {
-        if is_goal_low_carbs(goal) {
-            vec![FatSpecialCases::LowCarbsDiet]
-        }
-        else {vec![]}
-    };
 
-    if weight.is_fat_percent_higher(HIGH_FAT_THRESHOLD) {
-        let lean = weight.lean.unwrap();
-        return (lean * 1.0, lean * 2.0, cases)
+    if is_goal_low_carbs(goal) {
+        let normal_case = fat_normal_case(weight);
+        (weight.total * 0.66, normal_case.1, vec![FatSpecialCases::LowCarbsDiet(normal_case)])
     }
     else {
-        return (weight.total * 1.0, weight.total * 2.0, cases)
+        let (min, max) = fat_normal_case(weight);
+        (min, max, vec![])
+    }
+}
+
+fn fat_normal_case(weight: &Weight) -> (f32, f32) {
+    if weight.is_fat_percent_higher(HIGH_FAT_THRESHOLD) {
+        let lean = weight.lean.unwrap();
+        (lean * 1.0, lean * 2.0)
+    }
+    else {
+        (weight.total * 1.0, weight.total * 2.0)
     }
 }
 

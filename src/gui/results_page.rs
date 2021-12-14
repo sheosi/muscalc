@@ -37,9 +37,20 @@ impl Widget for Wdg {
         fn make_msg<E: EnumToString>(infos: Vec<E>) -> Option<String> {
             if !infos.is_empty() {
                 let mut res = String::new();
-                for i in infos {
+                let (last, all_msg) = infos.split_last().unwrap();
+                for i in all_msg {
+                    if infos.len() > 1 {
+                        res.push_str("* ");
+                    }
+
                     res.push_str(&i.to_string());
+                    res.push_str("\n\n");
                 }
+
+                if infos.len() > 1 {
+                    res.push_str("* ");
+                }
+                res.push_str(&last.to_string());
 
                 Some(res)
             } else {
@@ -50,13 +61,14 @@ impl Widget for Wdg {
             Msg::Update(data) => {                
                 {
                     let (base_cals, problems_cals) = calcs::base_calories(&data.weight, data.height, data.age, &data.sex);
-                    self.model.calories = calcs::target_calories(base_cals, &data.activity, &data.goal);
+                    let (min_cals, max_cals) = calcs::target_calories(base_cals, &data.activity, &data.goal);
+                    self.model.calories = (min_cals.round(), max_cals.round());
                     self.components.i_calories.stream().emit(InfoButtonUpdateText(make_msg(problems_cals)));
                 }
 
                 {
                     let (min_fat, max_fat, problems_fat) = calcs::fat(&data.weight, &data.goal);
-                    self.model.fat = (min_fat, max_fat);
+                    self.model.fat = (min_fat.round(), max_fat.round());
                     self.components.i_fat.stream().emit(InfoButtonUpdateText(make_msg(problems_fat)));
                 }
 
@@ -66,7 +78,7 @@ impl Widget for Wdg {
                             &data.training_kind, &data.goal, &data.sex,
                         &data.activity, data.is_bodybuilder);
 
-                    self.model.proteins = (min_proteins, max_proteins);
+                    self.model.proteins = (min_proteins.round(), max_proteins.round());
                     self.components.i_proteins.stream().emit(InfoButtonUpdateText(make_msg(problems_proteins)));
                 }
                 
@@ -75,7 +87,7 @@ impl Widget for Wdg {
                         self.model.calories,
                         self.model.proteins,
                         self.model.fat, data.weight.total, data.athlete_kind);
-                    self.model.carbs = (min_carbs, max_carbs);
+                    self.model.carbs = (min_carbs.round(), max_carbs.round());
                 }
             }
         }

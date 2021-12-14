@@ -96,8 +96,15 @@ mod info_popover {
         view! {
             #[name="popover"]
             gtk::Popover {
+                #[name="label"]
                 gtk::Label {
-                    text: &self.model.text
+                    text: &self.model.text,
+                    wrap: true,
+                    max_width_chars: 30,
+                    margin_top: 8,
+                    margin_bottom: 16,
+                    margin_start: 12,
+                    margin_end: 12
                 },
                 visible: false
             }

@@ -3,7 +3,7 @@ use crate::calcs::{Activity, AthleteKind, EnumIterString, Goal, GoalIntensity, M
 use crate::consts::gui::*;
 
 use relm::Widget;
-use gtk::{Orientation::Vertical, prelude::*};
+use gtk::{Align, Orientation::Vertical, prelude::*};
 use relm::{Sender, Relm};
 use relm_derive::{Msg, widget};
 
@@ -69,7 +69,7 @@ mod myscale {
 
         fn init_view(&mut self) {
             
-            self.widgets.label.set_size_request(100, -1);
+            self.widgets.label.set_size_request(110, -1);
 
             self.widgets.scale.set_adjustment(
                 &gtk::Adjustment::new(0.0, 0.0, 
@@ -145,7 +145,7 @@ impl Widget for Wdg {
 
     fn update(&mut self, event: Msg) {
         fn required(entry: &gtk::SpinButton) {
-            if entry.text() == "" {
+            if entry.value() == 0.0 {
                 entry.style_context().add_class("error");
             }
             else {
@@ -154,8 +154,8 @@ impl Widget for Wdg {
         }
 
         fn can_calc(wdg: &Wdg) -> bool {
-            let has_weight = wdg.widgets.e_weight.text() != "";
-            let has_age = wdg.widgets.e_age.text() != "";
+            let has_weight = wdg.widgets.e_weight.value() > 0.0;
+            let has_age = wdg.widgets.e_age.value() > 0.0;
 
             has_weight && has_age && (wdg.model.fat_has_content || wdg.model.height_has_content)
         }
@@ -287,14 +287,14 @@ impl Widget for Wdg {
             #[style_class="error"]
             gtk::SpinButton {
                 placeholder_text: Some("Kg"),
-                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0),
                 digits: 2,
                 changed => Msg::WeightChanged,
+                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0), // Numeric adjustment
                 cell: {
                     top_attach: 0,
                     left_attach: 1,
                 },
-                hexpand: true
+                //hexpand: true
             },
 
             // Age
@@ -309,9 +309,9 @@ impl Widget for Wdg {
             #[name="e_age"]
             #[style_class="error"]
             gtk::SpinButton {
-                placeholder_text: Some("years"),
+                placeholder_text: Some("Years"),
                 changed => Msg::AgeChanged,
-                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0),
+                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0), // Numeric
                 cell: {
                     top_attach: 1,
                     left_attach: 1
@@ -333,8 +333,8 @@ impl Widget for Wdg {
             gtk::SpinButton {
                 placeholder_text: Some("% (Optional)"),
                 sensitive: !self.model.height_has_content,
-                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0),
                 digits: 1,
+                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0), // Numeric
                 changed => Msg::FatChanged,
                 cell: {
                     top_attach: 2,
@@ -345,6 +345,7 @@ impl Widget for Wdg {
             // Separator
             gtk::Separator {
                 orientation: Vertical,
+                halign: Align::Start,
                 cell: {
                     top_attach: 2,
                     left_attach: 2
@@ -357,21 +358,23 @@ impl Widget for Wdg {
                 sensitive: !self.model.fat_has_content,
                 cell: {
                     top_attach: 2,
-                    left_attach: 3,
-                }
+                    left_attach: 3
+                },
             },
 
             #[name="e_height"]
             #[style_class="error"]
             gtk::SpinButton {
-                placeholder_text: Some("meters"),
+                placeholder_text: Some("Meters"),
                 sensitive: !self.model.fat_has_content,
                 changed => Msg::HeightChanged,
-                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 1.0, 5.0, 0.0),
+                valign: Align::Center,
+                digits: 1,
+                adjustment: &gtk::Adjustment::new(0.0, 0.0, 200.0, 0.1, 0.5, 0.0), // Numeric
                 cell: {
                     top_attach: 2,
                     left_attach: 4,
-                    width: 2
+                    width: 2,
                 }
             },
 
@@ -431,7 +434,8 @@ impl Widget for Wdg {
 
                 cell: {
                     top_attach: 4,
-                    left_attach: 1
+                    left_attach: 1,
+                    width: 1
                 }
             },
 
@@ -440,9 +444,9 @@ impl Widget for Wdg {
                 MyScaleValChanged(n) => Msg::GoalIntensityChanged(n),
                 sensitive: !self.model.is_goal_none,
                 cell: {
-                    top_attach: 4,
-                    left_attach: 2,
-                    width: 3
+                    top_attach: 5,
+                    left_attach: 1,
+                    width: 4
                 }
             },
             
@@ -451,7 +455,7 @@ impl Widget for Wdg {
             gtk::Label {
                 text: "Activity",
                 cell: {
-                    top_attach: 5,
+                    top_attach: 6,
                     left_attach: 0
                 }
             },
@@ -460,18 +464,29 @@ impl Widget for Wdg {
             MyScale(Activity::vec_string()) {
                 MyScaleValChanged(n) => Msg::ActivityChanged(n),
                 cell: {
-                    top_attach: 5,
+                    top_attach: 6,
                     left_attach: 1,
-                    width: 2
+                    width: 4
+                }
+            },
+
+            #[name="c_athlete"]
+            gtk::CheckButton {
+                label: "Athlete",
+                sensitive: self.model.activity != Activity::Sedentary,
+                cell: {
+                    top_attach: 6,
+                    left_attach: 5
                 }
             },
 
             gtk::Label {
                 text: "Kind",
                 sensitive: self.model.activity != Activity::Sedentary,
+                
                 cell: {
-                    top_attach: 5,
-                    left_attach: 3
+                    top_attach: 7,
+                    left_attach: 1
                 }
             },
 
@@ -479,18 +494,8 @@ impl Widget for Wdg {
             gtk::ComboBoxText {
                 sensitive: self.model.activity != Activity::Sedentary,
                 cell: {
-                    top_attach: 5,
-                    left_attach: 4
-                }
-            },
-            
-            #[name="c_athlete"]
-            gtk::CheckButton {
-                label: "Athlete",
-                sensitive: self.model.activity != Activity::Sedentary,
-                cell: {
-                    top_attach: 5,
-                    left_attach: 5
+                    top_attach: 7,
+                    left_attach: 2
                 }
             },
 
@@ -504,8 +509,9 @@ impl Widget for Wdg {
                 },
                 sensitive: self.model.can_calc,
                 cell: {
-                    top_attach: 7,
-                    left_attach: 5,
+                    top_attach: 9,
+                    left_attach: 4,
+                    width: 2
                 }
             },
         }
